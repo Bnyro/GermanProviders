@@ -36,10 +36,13 @@ class Megakino : MainAPI() {
 
     override val mainPage = mainPageOf(
         "" to "Trends",
-        "kinofilme" to "Filme",
+        "kinofilme" to "Kinofilme",
         "serials" to "Serien",
         "documentary" to "Dokumentationen",
     )
+
+    private var urlCookieCache: Pair<Map<String, String>, String>? = null
+
 
     /**
      * Follow the redirect set on [mainUrl] in order to get the current
@@ -48,13 +51,25 @@ class Megakino : MainAPI() {
      * That workaround is needed because they change they TLDs almost daily.
      */
     @Suppress("DEPRECATION")
-    private suspend fun getActualMainUrl(): String {
+    private suspend fun getActualMainUrlAndCookies(): Pair<Map<String, String>, String> {
+        urlCookieCache?.let { return it }
+
         // follow redirects to get the real base url
-        return app.get(mainUrl).url.trimEnd('/')
+        val actualMainUrl = app.get(mainUrl).url.trimEnd('/')
+        // get cookies to send with each request
+        val cookies = app.get("$actualMainUrl/index.php?yg=token").cookies
+
+        return cookies to actualMainUrl
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${getActualMainUrl()}/${request.data}/page/$page").document
+        val (cookies, actualMainUrl) = getActualMainUrlAndCookies()
+
+        val document =
+            app.get(
+                "$actualMainUrl/${request.data}/page/$page",
+                cookies = cookies
+            ).document
         val home = document.select("#dle-content > a").mapNotNull {
             it.toSearchResult()
         }
@@ -80,9 +95,12 @@ class Megakino : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
+        val (cookies, actualMainUrl) = getActualMainUrlAndCookies()
+
         val data =
             mapOf("do" to "search", "subaction" to "search", "story" to query.replace(" ", "+"))
-        val response = app.post(getActualMainUrl(), data = data).document
+        val response =
+            app.post(actualMainUrl, data = data, cookies = cookies.orEmpty()).document
 
         return response.select("a.poster.grid-item").map {
             it.toSearchResult()
@@ -91,12 +109,12 @@ class Megakino : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         // replace base url with the redirected main url
-        val uri = URI.create(url)
-        val fixedUrl = getActualMainUrl() + uri.rawPath
+        val (cookies, actualMainUrl) = getActualMainUrlAndCookies()
+        val fixedUrl = actualMainUrl + URI.create(url).rawPath
 
-        val document = app.get(fixedUrl).document
+        val document = app.get(fixedUrl, cookies = cookies.orEmpty()).document
         val title = document.selectFirst("div.page__subcols.d-flex h1")?.text() ?: "Unknown"
-        val description = document.selectFirst("div.page__cols.d-flex p")?.text()
+        val description = document.selectFirst("div.page__text")?.text()
         val poster =
             fixUrl(document.select("div.pmovie__poster.img-fit-cover img").attr("data-src"))
         val year = document.select("div.pmovie__year > span:nth-child(2)").text().toIntOrNull()
@@ -107,24 +125,26 @@ class Megakino : MainAPI() {
 
         val typeTag = document.select("div.pmovie__genres").text()
         val type = if (typeTag.contains("Filme")) TvType.Movie else TvType.TvSeries
-
-        val streamLinks = document.select("div.pmovie__player iframe")
-            .map { it.attr("src").ifEmpty { it.attr("data-src") } }.toJson()
-
         val related = document.select("section.pmovie__related a.poster").map {
             it.toSearchResult()
         }
 
         return if (type == TvType.TvSeries) {
-            val episodes = document.select("select.flex-grow-1.mr-select option").map {
-                val episodeNumber = it.attr("data-season").toIntOrNull()
-                val episodeLink = it.select("option").attr("value")
+            val episodes = document.select("select[name=pmovie__select-items]")
+                .filter { it.id().startsWith("ep") }
+                .map {
+                    val episodeNumber = it.id()
+                        .takeLastWhile { c -> c.isDigit() }
+                        .toIntOrNull()
+                    val episodeStreamLinks = it.select("option").map { option ->
+                        option.attr("value")
+                    }
 
-                newEpisode(episodeLink) {
-                    this.episode = episodeNumber
-                    this.posterUrl = poster
+                    newEpisode(episodeStreamLinks.toJson()) {
+                        this.episode = episodeNumber
+                        this.posterUrl = poster
+                    }
                 }
-            }
 
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
@@ -135,6 +155,10 @@ class Megakino : MainAPI() {
                 addTrailer(trailer)
             }
         } else {
+            val streamLinks = document.select("div.pmovie__player iframe")
+                .map { it.attr("src").ifEmpty { it.attr("data-src") } }.toJson()
+
+
             newMovieLoadResponse(title, url, TvType.Movie, streamLinks) {
                 this.posterUrl = poster
                 this.plot = description
