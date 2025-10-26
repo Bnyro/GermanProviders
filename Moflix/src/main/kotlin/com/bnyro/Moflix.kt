@@ -9,7 +9,6 @@ import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import org.jsoup.Jsoup
-import kotlin.math.roundToInt
 
 open class Moflix : MainAPI() {
     override var name = "Moflix"
@@ -92,7 +91,7 @@ open class Moflix : MainAPI() {
         val description = res.title?.description
         val trailers = res.title?.videos?.filter { it.category.equals("trailer", true) }
             ?.mapNotNull { it.src }
-        val rating = "${res.title?.rating}".toRatingInt()
+        val score = res.title?.rating?.let { Score.from10(it) }
         val actors = res.credits?.actors?.mapNotNull {
             ActorData(
                 Actor(it.name ?: return@mapNotNull null, it.poster),
@@ -122,7 +121,7 @@ open class Moflix : MainAPI() {
                         this.season = episode.seasonNumber
                         this.episode = episode.episodeNumber
                         this.posterUrl = episode.poster
-                        this.rating = episode.rating?.times(10)?.roundToInt()
+                        this.score = Score.from(episode.rating, 1)
                         this.description = episode.description
                         this.addDate(episode.releaseDate?.substringBefore("T"))
                     }
@@ -135,7 +134,7 @@ open class Moflix : MainAPI() {
                 this.showStatus = getStatus(res.title?.status)
                 this.plot = description
                 this.tags = tags
-                this.rating = rating
+                this.score = score
                 this.actors = actors
                 this.duration = duration
                 this.recommendations = recommendations
@@ -159,7 +158,7 @@ open class Moflix : MainAPI() {
                 this.comingSoon = res.title?.status.equals("upcoming", true)
                 this.plot = description
                 this.tags = tags
-                this.rating = rating
+                this.score = score
                 this.actors = actors
                 this.duration = duration
                 this.recommendations = recommendations

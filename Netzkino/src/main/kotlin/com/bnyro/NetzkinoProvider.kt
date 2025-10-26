@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
@@ -73,7 +74,9 @@ open class NetzkinoProvider : MainAPI() {
             this.plot = response.content
             this.duration = response.customFields.duration.firstOrNull()?.toIntOrNull()?.div(60)
             this.year = response.customFields.jahr.firstOrNull()?.toIntOrNull()
-            this.rating = response.customFields.imdbBewertung.firstOrNull()?.toFloatOrNull()?.roundToInt()
+            this.score = response.customFields.imdbBewertung.firstOrNull()?.toFloatOrNull()?.let {
+                Score.from10(it.roundToInt())
+            }
             addActors(response.customFields.stars.map { it.split(",") }.flatten())
         }
     }
