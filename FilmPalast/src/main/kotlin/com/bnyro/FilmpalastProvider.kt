@@ -1,6 +1,7 @@
 package com.bnyro
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -53,20 +54,28 @@ class FilmpalastProvider : MainAPI() {
         val title = document.select("h2.rb.bgDark").text()
         val imagePath = document.select(".detail.rb img.cover2").attr("src")
         val description = document.select("span[itemprop=description]").text()
-        val details = document.select("detail-content-list li")
-        val year = details.first()?.html()?.split("<br>")?.getOrNull(1)?.filter { it.isDigit() }
-            ?.toIntOrNull()
-        val duration =
-            details.select("em").first()?.ownText()?.filter { it.isDigit() }?.toIntOrNull()
+        val details = document.select("#detail-content-list li")
+        val year = details.text().substringAfter("Veröffentlicht:")
+            .takeWhile { it.isDigit() || it.isWhitespace() }.trim().toIntOrNull()
+        val duration = details.text().substringAfter("Spielzeit:")
+            .takeWhile { it.isDigit() || it.isWhitespace() }.trim().toIntOrNull()
+        val genres = details.select("a[href*=genre]").map { it.text() }
+        val actors = details.select("a[href*=title]").map { it.text() }
+        val score = document.select(".detail").text().substringAfter("Imdb: ").substringBefore("/").toFloatOrNull()
+            ?.let { Score.from10(it) }
 
         val links = document.select(".currentStreamLinks a.iconPlay").mapNotNull {
             it.attr("href").ifEmpty { it.attr("data-player-url") }
         }
         return newMovieLoadResponse(title, url, TvType.Movie, LoadData(links).toJson()).apply {
-            this.posterUrl = "$mainUrl$imagePath"
+            this.posterUrl = fixUrl(imagePath)
             this.plot = description
             this.duration = duration
             this.year = year
+            this.tags = genres
+            this.score = score
+
+            addActors(actors)
         }
     }
 
