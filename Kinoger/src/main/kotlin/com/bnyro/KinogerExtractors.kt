@@ -1,11 +1,11 @@
 package com.bnyro
 
-import com.lagradost.cloudstream3.extractors.Chillx
 import com.lagradost.cloudstream3.extractors.VidHidePro
 import com.lagradost.cloudstream3.extractors.VidStack
 import com.lagradost.cloudstream3.extractors.Vidguardto
+import com.lagradost.cloudstream3.extractors.Voe
 
-class KinogerRu : Chillx() {
+class KinogerRu : Voe() {
     override val name = "KinogerRu"
     override val mainUrl = "https://kinoger.ru"
 }
