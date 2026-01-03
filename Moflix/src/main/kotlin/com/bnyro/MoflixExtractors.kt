@@ -1,14 +1,8 @@
 package com.bnyro
 
-import com.lagradost.cloudstream3.extractors.Chillx
 import com.lagradost.cloudstream3.extractors.VidHidePro
 import com.lagradost.cloudstream3.extractors.VidStack
 import com.lagradost.cloudstream3.extractors.Vidguardto
-
-class MoflixFans : Chillx() {
-    override val name = "MoflixFans"
-    override val mainUrl = "https://moflix-stream.fans"
-}
 
 class MoflixDay : Vidguardto() {
     override val name = "MoflixDay"

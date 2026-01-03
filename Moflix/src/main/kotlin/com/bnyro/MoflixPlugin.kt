@@ -12,7 +12,6 @@ class MoflixPlugin: Plugin() {
         // All providers should be added in this manner. Please don't edit the providers list directly.
         registerMainAPI(Moflix())
         registerExtractorAPI(MoflixClick())
-        registerExtractorAPI(MoflixFans())
         registerExtractorAPI(MoflixUpns())
         registerExtractorAPI(MoflixRpmplay())
         registerExtractorAPI(MoflixDay())
