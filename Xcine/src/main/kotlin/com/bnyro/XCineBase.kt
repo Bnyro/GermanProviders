@@ -86,12 +86,13 @@ abstract class XCineBase : MainAPI() {
         val requestUrl = "$mainUrl/data/watch/?_id=$id"
         val res = app.get(requestUrl, referer = "$mainUrl/")
             .parsed<MediaDetail>()
-        val type = if (res.tv == 1) TvType.TvSeries else TvType.Movie
 
-        val recommendations =
-            app.get("$mainUrl/data/related_movies/?lang=2&cat=$type&_id=$id")
+        val category = if (res.tv == 1) "tv" else "movie"
+        val recommendations = runCatching {
+            app.get("$mainUrl/data/related_movies/?lang=2&cat=$category&_id=$id&server=0")
                 .parsed<RecommendationsResponse>()
                 .mapNotNull { it.toSearchResponse() }
+        }.getOrElse { emptyList() }
 
         val actors = when (res.cast) {
             is String -> res.cast.split(", ")
@@ -100,7 +101,7 @@ abstract class XCineBase : MainAPI() {
         }
 
         val posterUrl = getImageUrl(res.backdropPath ?: res.posterPath)
-        return if (type == TvType.TvSeries) {
+        return if (res.tv == 1) {
             val episodes = res.streams?.groupBy { it.e }?.mapNotNull { eps ->
                 val loadData = LoadData(eps.value.mapNotNull { it.stream }).toJson()
 
