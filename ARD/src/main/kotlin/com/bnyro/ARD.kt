@@ -126,7 +126,11 @@ open class ARD : MainAPI() {
                 response.teasers.mapNotNull { it.toSearchResponse() }
             }
 
-            return newHomePageResponse(request.name, searchResults, hasNext = false)
+            return newHomePageResponse(
+                request.copy(horizontalImages = true),
+                searchResults,
+                hasNext = false
+            )
         } catch (e: Exception) {
             // catch exceptions if a single home page category fails
             // because that would otherwise cancel all others as well
