@@ -23,6 +23,7 @@ import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import java.net.URL
 
 abstract class XCineBase : MainAPI() {
     override var name = "XCine"
@@ -151,29 +152,22 @@ abstract class XCineBase : MainAPI() {
     ): Boolean {
         val loadData = parseJson<LoadData>(data)
 
-        // only take few vinovo links due to ratelimiting
-        val (vinovoLinks, normalLinks) = loadData.links.partition { it.startsWith("https://vinovo.") }
-        val links = normalLinks + vinovoLinks.shuffled().take(3)
+        // only take the first 3 links, and 2 random links, per provider
+        // otherwise loading times increase a lot because XCine frequently
+        // returns more than 400 stream links per video
+        val links = loadData.links.groupBy {
+            URL(it).host
+        }.flatMap { (_, group) ->
+            group.take(3) + group.drop(3).shuffled().take(2)
+        }
 
         links.amap { link ->
-            if (!link.startsWith("http")) return@amap null
-
-            if (link.startsWith("https://dl.streamcloud")) {
-                callback.invoke(
-                    newExtractorLink(
-                        source = this.name,
-                        name = this.name,
-                        url = link
-                    )
-                )
-            } else {
-                loadExtractor(
-                    link,
-                    "$mainUrl/",
-                    subtitleCallback,
-                    callback
-                )
-            }
+            loadExtractor(
+                link,
+                "$mainUrl/",
+                subtitleCallback,
+                callback
+            )
         }
 
         return true
