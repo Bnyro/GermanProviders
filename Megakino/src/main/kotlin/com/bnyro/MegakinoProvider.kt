@@ -11,7 +11,6 @@ class MegakinoProvider: Plugin() {
     override fun load(context: Context) {
         registerMainAPI(Megakino())
         registerExtractorAPI(Voe())
-        registerExtractorAPI(Gxplayer())
         registerExtractorAPI(DoodPmExtractor())
     }
 }
