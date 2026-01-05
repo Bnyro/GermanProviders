@@ -22,7 +22,6 @@ import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import java.net.URL
 
 abstract class XCineBase : MainAPI() {
@@ -34,12 +33,34 @@ abstract class XCineBase : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
 
     override val mainPage = mainPageOf(
-        "data/browse/?lang=2&keyword=&year=&rating=&votes=&genre=&country=&cast=&directors=&type=movies&order_by=trending" to "Trends",
-        "data/browse/?lang=2&keyword=&year=&rating=&votes=&genre=&country=&cast=&directors=&type=movies&order_by=Views" to "Meistgesehene Filme",
-        "data/browse/?lang=2&keyword=&year=&rating=&votes=&genre=&country=&cast=&directors=&type=tvseries&order_by=Trending" to "Serien-Trends",
-        "data/browse/?lang=2&keyword=&year=&rating=&votes=&genre=&country=&cast=&directors=&type=movies&order_by=Updates" to "Neue Filme",
-        "data/browse/?lang=2&keyword=&year=&rating=&votes=&genre=&country=&cast=&directors=&type=tvseries&order_by=Updates" to "Neue Serien",
-    )
+        // By type (series/movie)
+        "movies,trending," to "Film-Trends",
+        "tvseries,trending," to "Serien-Trends",
+        "movies,updates," to "Neue Filme",
+        "tvseries,updates," to "Neue Serien",
+        "movies,views," to "Meistgesehene Filme",
+        "tvseries,views," to "Meistgesehene Serien",
+
+        ) +
+            // By genre
+            arrayOf(
+                "Action",
+                "Animation",
+                "Komödie",
+                "Dokumentation",
+                "Drama",
+                "Familie",
+                "Horror",
+                "Romantik",
+                "Sci-Fi",
+                "Thriller"
+            ).flatMap { genre ->
+                mainPageOf(
+                    ",trending,$genre" to "$genre-Trends",
+                    ",updates,$genre" to "Neu in $genre",
+                    ",views,$genre" to "Meistgesehen in $genre",
+                )
+            }
 
     private fun getImageUrl(link: String?): String? {
         if (link == null) return null
@@ -51,11 +72,15 @@ abstract class XCineBase : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
+        val (type, order, genre) = request.data.split(",", limit = 3)
+
+        val url = "$mainUrl/data/browse/?lang=2&type=$type&order_by=$order&genre=$genre&page=$page"
         val home =
-            app.get("$mainUrl/${request.data}&page=$page", referer = "$mainUrl/")
-                .parsed<MediaResponse>().movies?.mapNotNull { res ->
+            app.get(url, referer = "$mainUrl/")
+                // prevent crashing the whole main page by using parsedSafe
+                .parsedSafe<MediaResponse>()?.movies?.mapNotNull { res ->
                     res.toSearchResponse()
-                } ?: throw ErrorLoadingException("No movies in response.")
+                }.orEmpty()
         return newHomePageResponse(request.name, home)
     }
 
