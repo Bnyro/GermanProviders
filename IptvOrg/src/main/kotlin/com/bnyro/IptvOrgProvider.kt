@@ -24,6 +24,7 @@ open class IptvOrgProvider : MainAPI() {
     override val supportedTypes = setOf(
         TvType.Live,
     )
+    private val fuzzySearcher = FuzzySearcher(ContainsJaroRanker())
 
     override suspend fun getMainPage(
         page: Int,
@@ -53,7 +54,10 @@ open class IptvOrgProvider : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val data = IptvPlaylistParser().parseM3U(app.get(mainUrl).textLarge)
 
-        return data.items.filter { it.title.contains(query, ignoreCase = true) }
+        val results = fuzzySearcher.searchFuzzy(query, data.items) { channel ->
+            channel.title
+        }
+        return results
             .map { channel ->
                 newLiveSearchResponse(
                     channel.title,
