@@ -41,7 +41,7 @@ open class MediaCCC : MainAPI() {
     private fun Event.toSearchResponse(): SearchResponse {
         return newMovieSearchResponse(
             name = this.title,
-            url = Link(this.frontendLink, this.guid).toJson(),
+            url = this.frontendLink,
             type = TvType.Others,
         ) {
             this.posterUrl = this@toSearchResponse.thumbUrl
@@ -58,9 +58,9 @@ open class MediaCCC : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val guid = parseJson<Link>(url).guid
+        val slug = url.substringAfterLast("/")
 
-        val response = app.get("${mainUrl}/public/events/${guid}")
+        val response = app.get("${mainUrl}/public/events/${slug}")
             .parsed<Event>()
 
         return newMovieLoadResponse(
@@ -111,11 +111,6 @@ open class MediaCCC : MainAPI() {
 
         return true
     }
-
-    data class Link(
-        val link: String? = null,
-        val guid: String? = null,
-    )
 
     data class EventsResponse(
         val events: List<Event>,
