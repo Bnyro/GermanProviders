@@ -1,15 +1,15 @@
+
 package com.bnyro
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvSeriesSearchResponse
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
@@ -23,7 +23,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.runBlocking
-import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 open class Serienstream : MainAPI() {
@@ -38,12 +37,12 @@ open class Serienstream : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val document = app.get(mainUrl).document
+        val document = app.get("$mainUrl/beliebte-serien").document
 
-        val homePageLists = document.select("div.carousel").map { ele ->
-            val header = ele.selectFirst("h2")?.text() ?: return@map null
+        val homePageLists = document.select(".popular-page > div").map { elem ->
+            val header = elem.selectFirst("div > h2")?.text() ?: return@map null
 
-            val items = ele.select("div.coverListItem").mapNotNull {
+            val items = elem.select("a.show-card").mapNotNull {
                 it.toSearchResult()
             }
             HomePageList(header, items).takeIf { items.isNotEmpty() }
@@ -53,51 +52,49 @@ open class Serienstream : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val resp = app.post(
-            "$mainUrl/ajax/search",
-            data = mapOf("keyword" to query),
-            referer = "$mainUrl/search",
-            headers = mapOf(
-                "x-requested-with" to "XMLHttpRequest"
-            )
-        )
-        return resp.parsed<SearchResp>().filter {
-            !it.link.contains("episode-") && it.link.contains("/stream")
-        }.map {
-            newTvSeriesSearchResponse(
-                it.title?.replace(Regex("</?em>"), "") ?: "",
-                fixUrl(it.link),
-                TvType.TvSeries
-            )
+        val resp = app.get(
+            "$mainUrl/suche",
+            params = mapOf("term" to query, "tab" to "shows"),
+            referer = "$mainUrl/suche",
+        ).document
+
+        return resp.select(".results-group .card").mapNotNull {
+            it.toSearchResult()
         }
     }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
+        val metaContainer = document.selectFirst(".show-header-wrapper .container-fluid > div")
+            ?: throw RuntimeException("Metadata container HTML element not found")
 
-        val title = document.selectFirst("div.series-title span")?.text() ?: return null
-        val poster = fixUrlNull(document.selectFirst("div.seriesCoverBox img")?.attr("data-src"))
-        val tags = document.select("div.genres li a").map { it.text() }
-        val year = document.selectFirst("span[itemprop=startDate] a")?.text()?.toIntOrNull()
-        val description = document.select("p.seri_des").text()
+        val title = metaContainer.selectFirst("h1")?.text()
+            ?: throw RuntimeException("Failed to find series title")
+        val poster = fixUrlNull(metaContainer.selectFirst("img")?.attr("data-src"))
+        val year = metaContainer.selectFirst("h1 + p > a")?.text()?.toIntOrNull()
+        val description = metaContainer.select(".description-text").text()
         val actors =
-            document.select("li:contains(Schauspieler:) ul li a").map { it.select("span").text() }
+            metaContainer.select("li.series-group:contains(Besetzung:) a").map { it.text() }
+        val genres =
+            metaContainer.select("li.series-group:contains(Genre:) a").map { it.text() }
+        val trailerUrl = metaContainer.selectFirst("button[data-trailer-url]")?.attr("data-trailer-url")
 
-        val episodes = document.select("div#stream > ul:first-child li").mapNotNull { ele ->
-            val seasonLink = ele.selectFirst("a") ?: return@mapNotNull null
-            val seasonNumber = seasonLink.text().toIntOrNull()
-            val seasonDocument = app.get(fixUrl(seasonLink.attr("href"))).document
+        val episodes = document.select("#season-nav ul > li a").amap {
+            val seasonNumber = it.text().trim().toIntOrNull()
+            val seasonDocument = app.get(fixUrl(it.attr("href"))).document
 
-            seasonDocument.select("table.seasonEpisodesList tbody tr").map { eps ->
-                newEpisode(
-                    fixUrl(eps.selectFirst("a")?.attr("href") ?: return@map null),
-                ) {
-                    this.episode = eps.selectFirst("meta[itemprop=episodeNumber]")
-                        ?.attr("content")?.toIntOrNull()
-                    this.name = eps.selectFirst(".seasonEpisodeTitle")?.text()
+            seasonDocument.select(".episode-section .episode-row").map { eps ->
+                val episodeLink = eps.attr("onclick")
+                    .substringAfter("=")
+                    .trim('\'')
+
+                newEpisode(episodeLink) {
+                    this.episode = eps.selectFirst(".episode-number-cell")?.text()?.toIntOrNull()
+                    this.name = eps.select(".episode-title-cell > *")
+                        .joinToString(" - ") { el -> el.text() }
                     this.season = seasonNumber
                 }
-            }.filterNotNull()
+            }
         }.flatten()
 
         return newTvSeriesLoadResponse(
@@ -110,7 +107,8 @@ open class Serienstream : MainAPI() {
             this.posterUrl = poster
             this.year = year
             this.plot = description
-            this.tags = tags
+            this.tags = genres
+            addTrailer(trailerUrl)
 
             addActors(actors)
         }
@@ -123,22 +121,17 @@ open class Serienstream : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        document.select("div.hosterSiteVideo ul li").map {
-            Triple(
-                it.attr("data-lang-key"),
-                it.attr("data-link-target"),
-                it.select("h4").text()
-            )
-        }.amap {
-            val redirectUrl = app.get(fixUrl(it.second)).url
-            val lang = it.first.getLanguage(document)
-            val name = "${it.third} [${lang}]"
+        document.select(".link-wrapper > button").amap {
+            val streamUrl = fixUrl(it.attr("data-play-url"))
+            val source = it.attr("data-provider-name")
+            val language = it.attr("data-language-label")
 
-            loadExtractor(redirectUrl, data, subtitleCallback) { link ->
+            val redirectedStreamUrl = app.get(fixUrl(streamUrl)).url
+            loadExtractor(redirectedStreamUrl, data, subtitleCallback) { link ->
                 val linkWithFixedName = runBlocking {
                     newExtractorLink(
-                        source = it.third,
-                        name = name,
+                        source = source,
+                        name =  "$source [$language]",
                         url = link.url
                     ) {
                         referer = link.referer
@@ -155,25 +148,15 @@ open class Serienstream : MainAPI() {
         return true
     }
 
-    private fun Element.toSearchResult(): TvSeriesSearchResponse? {
+    private fun Element.toSearchResult(): SearchResponse? {
         val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val title = this.selectFirst("h3")?.text() ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
+        val title = this.selectFirst("img")?.attr("alt") ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.let {
+            it.attr("data-src").ifEmpty { it.attr("src") }
+        })
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
         }
     }
-
-    private fun String.getLanguage(document: Document): String? {
-        return document.selectFirst("div.changeLanguageBox img[data-lang-key=$this]")
-            ?.attr("title")?.removePrefix("mit")?.trim()
-    }
-
-    private class SearchResp: ArrayList<SearchItem>()
-
-    private data class SearchItem(
-        @JsonProperty("link") val link: String,
-        @JsonProperty("title") val title: String? = null,
-    )
 }
