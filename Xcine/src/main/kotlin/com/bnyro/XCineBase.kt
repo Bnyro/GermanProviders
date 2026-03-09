@@ -98,7 +98,10 @@ abstract class XCineBase : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val res = app.get("$mainUrl/data/browse/?lang=2&keyword=$query", referer = "$mainUrl/")
+        val res = app.get(
+            "$mainUrl/data/browse/?lang=2&keyword=$query&year=&networks=&rating=&votes=&genre=&country=&cast=&directors=&type=&order_by=&page=1&limit=20",
+            referer = "$mainUrl/"
+        )
             .parsed<MediaResponse>()
 
         return res.movies?.mapNotNull {
@@ -146,7 +149,7 @@ abstract class XCineBase : MainAPI() {
                 this.posterUrl = posterUrl
                 this.year = res.year
                 this.plot = res.storyline ?: res.overview
-                this.tags = listOf(res.genres ?: "")
+                this.tags = res.genres.orEmpty().split(", ").filter { it.isNotBlank() }
                 this.contentRating = res.rating
                 this.recommendations = recommendations
                 addActors(actors)
