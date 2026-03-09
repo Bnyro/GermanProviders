@@ -16,7 +16,6 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 
-
 open class EinschaltenInProvider : MainAPI() {
     override var name = "EinschaltenIn"
     override var lang = "de"
@@ -34,20 +33,12 @@ open class EinschaltenInProvider : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val response = app.post(
-            "$mainUrl/api/search",
-            json = mapOf(
-                "pageNumber" to (page - 1).toString(),
-                "pageSize" to "32",
-                "order" to request.data
-            ),
-            headers = mapOf(
-                "Content-Type" to "application/json"
-            )
+        val response = app.get(
+            "$mainUrl/api/movies?order=${request.data}",
         ).parsed<Response>()
 
-        val homePage = response.map { it.toSearchResponse() }
-        return newHomePageResponse(request.name, homePage, hasNext = true)
+        val homePage = response.data.map { it.toSearchResponse() }
+        return newHomePageResponse(request.name, homePage, hasNext = response.pagination.hasMore)
     }
 
     private fun getImageUrl(fileWithLeadingSlash: String): String {
@@ -81,7 +72,7 @@ open class EinschaltenInProvider : MainAPI() {
             )
         ).parsed<Response>()
 
-        return response.map { it.toSearchResponse() }
+        return response.data.map { it.toSearchResponse() }
     }
 
     override suspend fun load(url: String): LoadResponse? {
@@ -129,7 +120,15 @@ open class EinschaltenInProvider : MainAPI() {
         val runtime: Int? = null,
     )
 
-    class Response : ArrayList<MovieItem>()
+    data class Response(
+        val data: List<MovieItem>,
+        val pagination: Pagination,
+    )
+
+    data class Pagination(
+        val hasMore: Boolean,
+        val currentPage: Int
+    )
 
     data class StreamSource(
         val releaseName: String,
