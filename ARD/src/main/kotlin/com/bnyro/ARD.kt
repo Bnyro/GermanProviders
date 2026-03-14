@@ -103,7 +103,8 @@ open class ARD : MainAPI() {
         var lists = normalCategories.map { cat ->
             HomePageList(
                 name = cat.title,
-                list = cat.teasers.mapNotNull { it.toSearchResponse() }
+                list = cat.teasers.mapNotNull { it.toSearchResponse() },
+                isHorizontalImages = true
             )
         }.filter { it.list.isNotEmpty() }
 
@@ -128,7 +129,7 @@ open class ARD : MainAPI() {
                 liveStreams.flatMap { it.teasers }.mapNotNull { it.toSearchResponse() }
             } + extraLiveLinks.map { it.toSearchResponse() }
 
-            lists = listOf(HomePageList("Jetzt Live", liveList))
+            lists = listOf(HomePageList("Jetzt Live", liveList, isHorizontalImages = true))
         }
 
         return newHomePageResponse(lists, hasNext = false)
