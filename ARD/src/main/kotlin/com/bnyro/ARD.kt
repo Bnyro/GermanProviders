@@ -3,6 +3,7 @@ package com.bnyro
 import com.fasterxml.jackson.annotation.JsonAlias
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.Episode
+import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
@@ -15,7 +16,6 @@ import com.lagradost.cloudstream3.addDate
 import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.mvvm.debugException
 import com.lagradost.cloudstream3.newEpisode
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newLiveSearchResponse
@@ -41,25 +41,17 @@ open class ARD : MainAPI() {
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries, TvType.Live)
     override var mainUrl = "https://api.ardmediathek.de"
-    open val programApiUrl = "https://programm-api.ard.de"
 
     override val mainPage = mainPageOf(
-        "1FdQ5oz2JK6o2qmyqMsqiI:-4573418300315789064" to "Jetzt Live",
-        "1FdQ5oz2JK6o2qmyqMsqiI:7024894723483797725" to "Film-Empfehlungen",
-        "1f65j6Y49hbQUyQbg3sWRP:-6881003991164746949" to "Unsere Top-Serien",
-        "3JvraZLz6r8E9VJOSjxe0m:3945748791191973508" to "Spannende Dokus und Reportagen",
-        "1f65j6Y49hbQUyQbg3sWRP:-1242529055250270726" to "Drama-Serien",
-        "1f65j6Y49hbQUyQbg3sWRP:8954650660112843577" to "Dramedy-Serien",
-        "1f65j6Y49hbQUyQbg3sWRP:-1698940734772669089" to "Crime und spannende Serien",
-        "3JvraZLz6r8E9VJOSjxe0m:-4951729414550313310" to "Dokumentarfilme",
-        "1FdQ5oz2JK6o2qmyqMsqiI:-4156144666028728696" to "Unsere besten Dokuserien",
-        "d08a2b5f-8133-4bdd-8ea9-64b6172ce5ee:5379188208992982100" to "Aktuelle Debatten",
-        "d08a2b5f-8133-4bdd-8ea9-64b6172ce5ee:-1083078599273736954" to "Exklusive Recherchen",
-        "3JvraZLz6r8E9VJOSjxe0m%3A-7375671202743065214" to "Wissens-Dokus",
-        "1FdQ5oz2JK6o2qmyqMsqiI:-6311741896596619341" to "Doku-Soaps",
-        "1FdQ5oz2JK6o2qmyqMsqiI%3A-3221987816760504385" to "Soaps und Kultserien",
-        "1FdQ5oz2JK6o2qmyqMsqiI:-8035917636575745435" to "Politik-Talks und Politik-Magazine"
+        "home" to "",
+        "editorial/filme" to "",
+        "editorial/serien" to "",
+        "editorial/dokus" to "",
+        "editorial/geschichte" to "",
+        "editorial/investigativ" to ""
     )
+
+    open val programApiUrl = "https://programm-api.ard.de"
 
     // Sources: https://gist.github.com/Axel-Erfurt/b40584d152e1c2f13259590a135e05f4, https://www.zdf.de/live-tv
     private val extraLiveLinks = listOf(
@@ -99,15 +91,28 @@ open class ARD : MainAPI() {
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        try {
-            val response =
-                app.get("${mainUrl}/page-gateway/widgets/ard/editorials/${request.data}?pageSize=${PAGE_SIZE}&pageNumber=${page - 1}")
-                    .parsed<Editorial>()
+        val response =
+            app.get("${mainUrl}/page-gateway/pages/ard/${request.data}")
+                .parsed<HomePageDetailsResponse>()
 
-            val searchResults = if (request.name == "Jetzt Live") {
+        val liveStreams =
+            response.widgets.filter { it.title.lowercase().contains("tv-programm") }
+        val normalCategories =
+            response.widgets.filter { !it.title.lowercase().contains("tv-programm") }
+
+        var lists = normalCategories.map { cat ->
+            HomePageList(
+                name = cat.title,
+                list = cat.teasers.mapNotNull { it.toSearchResponse() }
+            )
+        }.filter { it.list.isNotEmpty() }
+
+        // only applies for the "home" category
+        if (request.data == "home") {
+            val liveList = try {
                 val programInfoMap = fetchProgramInformation()
 
-                val results = response.teasers.map { channel ->
+                liveStreams.flatMap { it.teasers }.map { channel ->
                     // append program information (if available)
                     val programInfo = programInfoMap[channel.getID()]
 
@@ -119,25 +124,14 @@ open class ARD : MainAPI() {
                         )
                     } else channel
                 }.mapNotNull { it.toSearchResponse() }
+            } catch (_: Exception) {
+                liveStreams.flatMap { it.teasers }.mapNotNull { it.toSearchResponse() }
+            } + extraLiveLinks.map { it.toSearchResponse() }
 
-                // append external live streams
-                results + extraLiveLinks.map { it.toSearchResponse() }
-            } else {
-                response.teasers.mapNotNull { it.toSearchResponse() }
-            }
-
-            return newHomePageResponse(
-                request.copy(horizontalImages = true),
-                searchResults,
-                hasNext = false
-            )
-        } catch (e: Exception) {
-            // catch exceptions if a single home page category fails
-            // because that would otherwise cancel all others as well
-            debugException { e.toString() }
-
-            return newHomePageResponse(request.name, emptyList())
+            lists = listOf(HomePageList("Jetzt Live", liveList))
         }
+
+        return newHomePageResponse(lists, hasNext = false)
     }
 
     private suspend fun fetchProgramInformation(): Map<String, Teaser> {
@@ -506,6 +500,10 @@ open class ARD : MainAPI() {
         val title: String,
         val widgets: List<Widget> = emptyList(),
         val coreAssetType: String?
+    )
+
+    data class HomePageDetailsResponse(
+        val widgets: List<Widget> = emptyList()
     )
 
     data class Widget(
