@@ -27,10 +27,10 @@ open class Dmax : MainAPI() {
     override var name: String = "Dmax"
     override var mainUrl: String = "https://dmax.de"
     open var apiUrl: String = "https://eu1-prod.disco-api.com"
-    open var metadataApiUrl: String = "https://de-api.loma-cms.com"
+    open var metadataApiUrl: String = "https://public.aurora.enhanced.live"
 
     // service specific configuration
-    open var serviceIdentifier: String = "dmax" // used for metadataApiUrl
+    open var serviceIdentifier: String = "dmaxde" // used for metadataApiUrl
     open var mediathekSlug: String = "sendungen" // used for metadataApiUrl
     open var apiTokenRealm = "dmaxde" // used for obtaining tokens from apiUrl
 
@@ -46,7 +46,7 @@ open class Dmax : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val response =
-            app.get("$metadataApiUrl/feloma/page/homepage/?environment=$serviceIdentifier&v=2")
+            app.get("$metadataApiUrl/site/page/homepage/?filter[environment]=$serviceIdentifier&v=2&include=default")
                 .parsed<MediaResult>()
 
         val pages =
@@ -64,7 +64,7 @@ open class Dmax : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse>? {
         val response =
-            app.get("$metadataApiUrl/feloma/search/page/?q=$query&environment=$serviceIdentifier&pageType=showpage&page_size=20")
+            app.get("$metadataApiUrl/site/search/page/?q=$query&filter[environment]=$serviceIdentifier&filter[type]=showpage&page[size]=20&v=2&include=default")
                 .parsed<SearchRoot>()
 
         return response.data.map { it.toSearchResponse() }
@@ -95,7 +95,7 @@ open class Dmax : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val slug = url.removeSuffix("/").substringAfterLast("/")
         val response =
-            app.get("$metadataApiUrl/feloma/page/$slug/?environment=$serviceIdentifier&parent_slug=$mediathekSlug&v=2")
+            app.get("$metadataApiUrl/site/page/$slug/?filter[environment]=$serviceIdentifier&parent_slug=$mediathekSlug&v=2")
                 .parsed<MediaResult>()
 
         val seriesBlock = response.blocks.firstOrNull { it.showId != null }
@@ -194,7 +194,7 @@ open class Dmax : MainAPI() {
     )
 
     private data class MediaResult(
-        val uid: String,
+        val uid: String? = null,
         val title: String,
         val dateCreated: String,
         val dateLastModified: String,
@@ -277,13 +277,7 @@ open class Dmax : MainAPI() {
     )
 
     private data class Poster(
-        val id: String,
-        val type: String,
-        val height: Long,
-        val kind: String,
-        val src: String,
-        val width: Long,
-        val images: List<Any?>,
+        val src: String
     )
 
     private data class VideoPlaybackRequest(
