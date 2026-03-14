@@ -4,12 +4,7 @@ import com.lagradost.cloudstream3.Prerelease
 import com.lagradost.cloudstream3.extractors.ByseSX
 import com.lagradost.cloudstream3.extractors.VidHidePro
 import com.lagradost.cloudstream3.extractors.VidStack
-import com.lagradost.cloudstream3.extractors.Vidguardto
 
-class MoflixDay : Vidguardto() {
-    override val name = "MoflixDay"
-    override val mainUrl = "https://moflix-stream.day"
-}
 
 class MoflixUpns : VidStack() {
     override var name: String = "Moflix UPNS"

@@ -12,7 +12,6 @@ class KinogerPlugin: Plugin() {
         registerMainAPI(Kinoger())
         registerExtractorAPI(KinogerRu())
         registerExtractorAPI(KinogerBe())
-        registerExtractorAPI(KinogerPw())
         registerExtractorAPI(KinogerRe())
         registerExtractorAPI(KinogerP2PPlay())
     }

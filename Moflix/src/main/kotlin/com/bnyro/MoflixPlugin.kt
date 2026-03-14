@@ -5,7 +5,6 @@ import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
 import android.content.Context
 import com.lagradost.cloudstream3.Prerelease
-import com.lagradost.cloudstream3.extractors.DoodstreamCom
 
 @CloudstreamPlugin
 @Prerelease
@@ -16,8 +15,6 @@ class MoflixPlugin: Plugin() {
         registerExtractorAPI(MoflixClick())
         registerExtractorAPI(MoflixUpns())
         registerExtractorAPI(MoflixRpmplay())
-        registerExtractorAPI(MoflixDay())
         registerExtractorAPI(MoflixLink())
-        registerExtractorAPI(DoodstreamCom())
     }
 }

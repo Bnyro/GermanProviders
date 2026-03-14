@@ -2,7 +2,6 @@ package com.bnyro
 
 import com.lagradost.cloudstream3.extractors.VidHidePro
 import com.lagradost.cloudstream3.extractors.VidStack
-import com.lagradost.cloudstream3.extractors.Vidguardto
 import com.lagradost.cloudstream3.extractors.Voe
 
 class KinogerRu : Voe() {
@@ -13,11 +12,6 @@ class KinogerRu : Voe() {
 class KinogerBe : VidHidePro() {
     override var name = "KinogerBe"
     override var mainUrl = "https://kinoger.be"
-}
-
-class KinogerPw : Vidguardto() {
-    override var name = "KinogerPw"
-    override var mainUrl = "https://kinoger.pw"
 }
 
 class KinogerRe : VidStack() {
