@@ -1,12 +1,12 @@
 // use an integer for version numbers
-version = 14
+version = 15
 
 
 cloudstream {
     language = "de"
     // All of these properties are optional, you can safely remove them
 
-    description = "Enthält: XcineIO, Movie4k, Streamcloud, Kinokiste"
+    description = "Enthält: Xcine, Movie4k, Streamcloud, Kinokiste"
     authors = listOf("Bnyro")
 
     /**
@@ -22,5 +22,5 @@ cloudstream {
         "Movie",
     )
 
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://xcine.io&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=https://xcine.ru&sz=%size%"
 }

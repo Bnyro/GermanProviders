@@ -19,7 +19,7 @@ import com.lagradost.cloudstream3.extractors.Voe
 class XCinePlugin: Plugin() {
     override fun load(context: Context) {
         // All providers should be added in this manner. Please don't edit the providers list directly.
-        registerMainAPI(XcineIO())
+        registerMainAPI(XcineRU())
         registerMainAPI(Movie4k())
         registerMainAPI(Streamcloud())
         registerMainAPI(KinoKisteClub())
