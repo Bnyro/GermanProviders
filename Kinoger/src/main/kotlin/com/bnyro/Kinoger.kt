@@ -1,6 +1,7 @@
 package com.bnyro
 
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.AppUtils
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
@@ -29,8 +30,10 @@ class Kinoger : MainAPI() {
         "stream/komdie" to "Komdie",
     )
 
+    private val cloudflareInterceptor by lazy { CloudflareKiller() }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("$mainUrl/${request.data}/page/$page").document
+        val document = app.get("$mainUrl/${request.data}/page/$page", interceptor = cloudflareInterceptor).document
         val home = document.select("div#dle-content div.short").mapNotNull {
             it.toSearchResult()
         }
@@ -62,13 +65,13 @@ class Kinoger : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        return app.get("$mainUrl/?do=search&subaction=search&titleonly=3&story=$query&x=0&y=0&submit=submit").document.select(
+        return app.get("$mainUrl/?do=search&subaction=search&titleonly=3&story=$query&x=0&y=0&submit=submit", interceptor = cloudflareInterceptor).document.select(
             "div#dle-content div.titlecontrol"
         ).mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = cloudflareInterceptor).document
         val title = document.selectFirst("h1#news-title")?.text() ?: ""
         val poster = fixUrlNull(document.selectFirst("div.images-border img")?.getImageAttr())
         val description = document.select("div.images-border").text()
