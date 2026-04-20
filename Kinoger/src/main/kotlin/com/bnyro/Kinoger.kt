@@ -55,6 +55,10 @@ class Kinoger : MainAPI() {
             ?: this.selectFirst("a")?.attr("title")
             ?: return null
 
+        // They mix in titles like "KinoGer.com und kinoGer.to DNS-Sperren umgehen",
+        // which we don't want to show in our results
+        if (title.contains("KinoGer", ignoreCase = true)) return null
+
         val posterPath = this.selectFirst("div.content_text img")?.getImageAttr()
             ?: this.nextElementSibling()?.selectFirst("div.content_text img")?.getImageAttr()
             ?: this.selectFirst("img")?.getImageAttr()
