@@ -48,7 +48,7 @@ class WeltDe : MainAPI() {
             HomePageList(title, items)
         }
 
-        return newHomePageResponse(lists)
+        return newHomePageResponse(lists, hasNext = false)
     }
 
     // Don't modify, this is set to a fixed value by Welt
