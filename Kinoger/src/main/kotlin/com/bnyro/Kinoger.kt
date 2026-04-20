@@ -12,7 +12,7 @@ import org.jsoup.nodes.Element
 
 class Kinoger : MainAPI() {
     override var name = "Kinoger"
-    override var mainUrl = "https://kinoger.to"
+    override var mainUrl = "https://kinoger.com"
     override var lang = "de"
     override val hasMainPage = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
