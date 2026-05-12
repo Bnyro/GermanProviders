@@ -1,13 +1,13 @@
 // use an integer for version numbers
-version = 5
+version = 1
 
 
 cloudstream {
     language = "de"
     // All of these properties are optional, you can safely remove them
 
-    description = "Serien online ansehen und streamen"
-    authors = listOf("Bnyro")
+    description = "Animes online ansehen und streamen"
+    authors = listOf("Hexated", "Bnyro")
 
     /**
      * Status int as the following:
@@ -17,7 +17,7 @@ cloudstream {
      * 3: Beta only
      * */
     status = 1 // will be 3 if unspecified
-    tvTypes = listOf("Series")
+    tvTypes = listOf("Anime", "AnimeMovies")
 
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://s.to&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=https://aniworld.to.to&sz=%size%"
 }
