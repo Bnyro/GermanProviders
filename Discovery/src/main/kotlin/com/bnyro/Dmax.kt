@@ -26,27 +26,21 @@ open class Dmax : MainAPI() {
 
     override var name: String = "Dmax"
     override var mainUrl: String = "https://dmax.de"
-    open var apiUrl: String = "https://eu1-prod.disco-api.com"
-    open var metadataApiUrl: String = "https://public.aurora.enhanced.live"
+    open var apiUrl: String = "https://public.aurora.enhanced.live"
 
     // service specific configuration
     open var serviceIdentifier: String = "dmaxde" // used for metadataApiUrl
     open var mediathekSlug: String = "sendungen" // used for metadataApiUrl
-    open var apiTokenRealm = "dmaxde" // used for obtaining tokens from apiUrl
+    open var apiTokenRealm = "de" // used for obtaining tokens from apiUrl
 
     private suspend fun obtainApiToken(): String {
-        return app.get(
-            "$apiUrl/token?realm=$apiTokenRealm", headers = mapOf(
-                "X-Device-Info" to "STONEJS/1 (Unknown/Unknown; Linux/undefined; Unknown)",
-                "X-disco-client" to "WEB:UNKNOWN:wbdatv:2.1.9",
-                "X-disco-params" to "realm=$apiTokenRealm",
-            )
-        ).parsed<TokenResponse>().data.attributes.token
+        return app.get("$apiUrl/token?realm=$apiTokenRealm")
+            .parsed<TokenResponse>().data.attributes.token
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
         val response =
-            app.get("$metadataApiUrl/site/page/homepage/?filter[environment]=$serviceIdentifier&v=2&include=default")
+            app.get("$apiUrl/site/page/homepage/?filter[environment]=$serviceIdentifier&v=2&include=default")
                 .parsed<MediaResult>()
 
         val pages =
@@ -64,7 +58,7 @@ open class Dmax : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse>? {
         val response =
-            app.get("$metadataApiUrl/site/search/page/?q=$query&filter[environment]=$serviceIdentifier&filter[type]=showpage&page[size]=20&v=2&include=default")
+            app.get("$apiUrl/site/search/page/?q=$query&filter[environment]=$serviceIdentifier&filter[type]=showpage&page[size]=20&v=2&include=default")
                 .parsed<SearchRoot>()
 
         return response.data.map { it.toSearchResponse() }
@@ -95,7 +89,7 @@ open class Dmax : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val slug = url.removeSuffix("/").substringAfterLast("/")
         val response =
-            app.get("$metadataApiUrl/site/page/$slug/?filter[environment]=$serviceIdentifier&parent_slug=$mediathekSlug&v=2")
+            app.get("$apiUrl/site/page/$slug/?filter[environment]=$serviceIdentifier&parent_slug=$mediathekSlug&v=2")
                 .parsed<MediaResult>()
 
         val seriesBlock = response.blocks.firstOrNull { it.showId != null }
@@ -305,55 +299,11 @@ open class Dmax : MainAPI() {
     )
 
     private data class VideoAttributes(
-        val markers: Markers,
-        val reportProgressInterval: Long,
-        val ssaiInfo: SsaiInfo,
         val streaming: List<Streaming>,
-        val userInfo: UserInfo,
-        val viewingHistory: ViewingHistory,
-    )
-
-    private data class Markers(
-        val videoAboutToEnd: Long,
-    )
-
-    private data class SsaiInfo(
-        val adMetadataSchemaVersion: String,
-        val forecastTimeline: List<ForecastTimeline>,
-        val vendorAttributes: VendorAttributes,
-    )
-
-    private data class ForecastTimeline(
-        val event: Event,
-        val time: Time,
-        val triggerTime: Double,
-    )
-
-    private data class Event(
-        val action: String,
-        val schema: String,
-        val duration: Double?,
-        val position: Long?,
-    )
-
-    private data class Time(
-        val contentPosition: Double,
-        val streamPosition: Double,
-    )
-
-    private data class VendorAttributes(
-        val interstitialUrl: String,
-        val pingUrl: String,
-        val sessionId: String,
     )
 
     private data class Streaming(
-        val cdn: String,
-        val fallback: Boolean,
-        val playbackProfile: String,
         val protection: Protection,
-        val provider: String,
-        val streamMode: String,
         val type: String,
         val url: String,
     )
