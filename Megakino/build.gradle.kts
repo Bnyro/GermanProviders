@@ -1,4 +1,4 @@
-version = 5
+version = 6
 
 
 cloudstream {
@@ -21,5 +21,5 @@ cloudstream {
     // You can find a list of available types here:
     // https://recloudstream.github.io/cloudstream/html/app/com.lagradost.cloudstream3/-tv-type/index.html
     tvTypes = listOf("Movie", "TvSeries", "Documentary")
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://megakino.tube&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=https://megakino4.to&sz=%size%"
 }
