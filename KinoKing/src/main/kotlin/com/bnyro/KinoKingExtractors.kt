@@ -3,6 +3,7 @@ package com.bnyro
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.extractors.Supervideo
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.fixUrl
@@ -27,4 +28,9 @@ class MeineCloudClickExtractor : ExtractorApi() {
             loadExtractor(it, subtitleCallback, callback)
         }
     }
+}
+
+class Dropstream: Supervideo() {
+    override var mainUrl = "https://dr0pstream.com"
+    override var name = "Dropstream"
 }
