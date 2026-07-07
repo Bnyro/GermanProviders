@@ -19,5 +19,5 @@ cloudstream {
     status = 1 // will be 3 if unspecified
     tvTypes = listOf("Series")
 
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://s.to&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=https://serienstream.to&sz=%size%"
 }

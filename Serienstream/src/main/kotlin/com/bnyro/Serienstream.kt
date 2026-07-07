@@ -26,7 +26,7 @@ import kotlinx.coroutines.runBlocking
 import org.jsoup.nodes.Element
 
 open class Serienstream : MainAPI() {
-    override var mainUrl = "https://s.to"
+    override var mainUrl = "https://serienstream.to"
     override var name = "Serienstream"
     override val supportedTypes = setOf(TvType.TvSeries)
 
