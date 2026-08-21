@@ -86,7 +86,7 @@ class Kinoger : MainAPI() {
             it.toSearchResult()
         }
 
-        val scripts = document.select("div[id^=container-video] script")
+        val scripts = document.select("section[id^=content] div[id^=container-video] script")
             .map { it.data() }
         val links = scripts
             .map { script ->
