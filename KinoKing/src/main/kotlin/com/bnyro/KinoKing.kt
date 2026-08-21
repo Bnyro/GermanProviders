@@ -11,6 +11,7 @@ import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.addDate
 import com.lagradost.cloudstream3.amap
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.newEpisode
@@ -133,15 +134,16 @@ open class KinoKing : MainAPI() {
             fun String.fixUrl() = this.replace("\\/", "/")
 
             val episodes = allEpisodesData.map { episode ->
-                val links = episode.videoLinks.split(",").map { it.fixUrl() }
+                val links = episode.videoLinks.orEmpty().split(",").map { it.fixUrl() }
                 newEpisode(links) {
                     name = episode.name
                     description = episode.overview
                     this.episode = episode.episodeNumber.toInt()
                     this.season = episode.seasonNumber.toInt()
-                    this.posterUrl = "$tmdbImageUrl${episode.stillPath.fixUrl()}"
+                    this.posterUrl = episode.stillPath?.fixUrl()?.let { "$tmdbImageUrl${it}" }
                     this.runTime = episode.runtime.toInt()
-                    this.score = Score.from(episode.voteAverage.toFloatOrNull(), 10)
+                    this.score = Score.from(episode.voteAverage?.toFloatOrNull(), 10)
+                    this.addDate(episode.airDate)
                 }
             }
 
@@ -190,36 +192,26 @@ open class KinoKing : MainAPI() {
 
     typealias KinoEpisodeList = List<KinoEpisode>
     data class KinoEpisode(
-        val id: Long,
+        val id: Any,
         @JsonProperty("series_id")
         val seriesId: Long,
         @JsonProperty("tmdb_series_id")
-        val tmdbSeriesId: Long,
+        val tmdbSeriesId: Long?,
         @JsonProperty("season_number")
         val seasonNumber: Long,
         @JsonProperty("episode_number")
         val episodeNumber: Long,
         val name: String,
-        val overview: String,
+        val overview: String?,
         @JsonProperty("air_date")
-        val airDate: String,
+        val airDate: String?,
         @JsonProperty("still_path")
-        val stillPath: String,
+        val stillPath: String?,
         @JsonProperty("vote_average")
-        val voteAverage: String,
+        val voteAverage: String?,
         val runtime: Long,
-        @JsonProperty("custom_video_url")
-        val customVideoUrl: Any?,
-        @JsonProperty("video_source")
-        val videoSource: String,
-        val status: String,
-        val watched: Long,
-        @JsonProperty("created_at")
-        val createdAt: String,
-        @JsonProperty("updated_at")
-        val updatedAt: String,
         @JsonProperty("video_links")
-        val videoLinks: String,
+        val videoLinks: String?,
         @JsonProperty("link_count")
         val linkCount: Long,
     )
