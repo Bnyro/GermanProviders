@@ -6,7 +6,7 @@ cloudstream {
     language = "de"
     // All of these properties are optional, you can safely remove them
 
-    description = "Filme entdecken"
+    description = "Deine alten Schätze; Serien und Filme. Kostenlos auf Abruf und in Full HD."
     authors = listOf("Bnyro")
 
     /**
@@ -19,7 +19,8 @@ cloudstream {
     status = 1 // will be 3 if unspecified
     tvTypes = listOf(
         "Movie",
+        "TvSeries"
     )
 
-    iconUrl = "https://www.google.com/s2/favicons?domain=filmo.to&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=flixitv-stream.eu&sz=%size%"
 }
