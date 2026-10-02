@@ -5,6 +5,9 @@ This repository contains a collection of German providers for CloudStream3.
 ### Installation
 In order to install this repository, paste [this link](https://raw.githubusercontent.com/Bnyro/GermanProviders/refs/heads/master/repo.json) into the field for the repository URL in CloudStream's *Add repository* menu.
 
+### Links
+[Official CloudStream repo](https://github.com/recloudstream/cloudstream) · [CloudStream Wiki](https://cloudstream.miraheze.org/wiki/Main_Page)
+
 ### License
 [![GNU GPLv3 Image](https://www.gnu.org/graphics/gplv3-127x51.png)](http://www.gnu.org/licenses/gpl-3.0.en.html)
 
