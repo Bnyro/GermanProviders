@@ -17,7 +17,7 @@ open class HDFilme : MainAPI() {
     override val hasMainPage = true
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie)
-    override var mainUrl = "https://hdfilme.my"
+    override var mainUrl = "https://hdfilme.ceo"
     open val streamsSourceHost = "meinecloud.click"
 
     override suspend fun getMainPage(

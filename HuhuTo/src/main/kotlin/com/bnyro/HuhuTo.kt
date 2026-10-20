@@ -1,8 +1,9 @@
 package com.bnyro
 
-import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
+import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTMDbId
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.MainAPI
@@ -11,35 +12,43 @@ import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
 import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newLiveStreamLoadResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import kotlin.math.max
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
-class HuhuTo : MainAPI() {
+open class HuhuTo : MainAPI() {
     override var name: String = "Huhu"
+
     override var mainUrl: String = "https://huhu.to"
+
+    // actual URL is huhu.to, but all API requests go through mhub
+    open val apiUrl: String = "https://mhub.mx"
+
     override var lang: String = "de"
     override val mainPage: List<MainPageData> = mainPageOf(
-        "movie" to "Filme",
-        "series" to "Serien",
+        "$mainUrl/live/catalog/live/channels" to "Live",
+        "$apiUrl/tmdb/catalog/video/movie" to "Filme",
+        "$apiUrl/tmdb/catalog/series/series" to "Serien",
     )
     override val hasMainPage: Boolean = true
+    override val supportedTypes: Set<TvType> = setOf(TvType.Movie, TvType.TvSeries, TvType.Live)
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val response =
-            app.get("$mainUrl/web-vod/api/list?id=${request.data}.trending", headers = huhuHeaders)
-                .parsed<TrendsResponse>()
+            app.get("${request.data}.json?sort=trending&language=de")
+                .parsed<ItemsResponse>()
 
         return newHomePageResponse(
             request,
-            response.data.map { it.toSearchResponse() },
+            response.items.map { it.toSearchResponse() },
             hasNext = false
         )
     }
@@ -47,28 +56,35 @@ class HuhuTo : MainAPI() {
     fun MediaItem.toSearchResponse(): SearchResponse {
         return newMovieSearchResponse(
             name = name,
-            url = "$mainUrl/web-vod/item?id=$id",
-            type = if (this.id.contains("movie")) TvType.Movie else TvType.TvSeries
+            url = if (type == "live") "$mainUrl/live/play/$id" else "$mainUrl/#/item/tmdb/${type}/$id",
+            type = when (this.type) {
+                "series" -> TvType.TvSeries
+                "live" -> TvType.Live
+                else -> TvType.Movie
+            }
         ) {
-            posterUrl = poster
-            year = releaseDate.take(4).toIntOrNull()
+            posterUrl = images?.poster
+            year = releaseDate?.take(4)?.toIntOrNull()
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val movies =
             app.get(
-                "$mainUrl/web-vod/api/list?id=movie.trending.search=$query",
-                headers = huhuHeaders
-            ).parsed<TrendsResponse>().data.map { it.toSearchResponse() }
+                "$apiUrl/tmdb/catalog/series/series.json?search=$query&language=de",
+            ).parsed<ItemsResponse>().items.map { it.toSearchResponse() }
 
         val series =
             app.get(
-                "$mainUrl/web-vod/api/list?id=series.trending.search=$query",
-                headers = huhuHeaders
-            ).parsed<TrendsResponse>().data.map { it.toSearchResponse() }
+                "$apiUrl/tmdb/catalog/video/movie.json?search=$query&language=de",
+            ).parsed<ItemsResponse>().items.map { it.toSearchResponse() }
 
-        return mergeListsAlternating(movies, series)
+        val channels =
+            app.get(
+                "$mainUrl/live/catalog/live/channels.json?search=$query&language=de",
+            ).parsed<ItemsResponse>().items.map { it.toSearchResponse() }
+
+        return mergeListsAlternating(movies, series, channels)
     }
 
     /**
@@ -76,46 +92,39 @@ class HuhuTo : MainAPI() {
      *
      * E.g. for the input [1, 5], [8, 2], this returns [1, 8, 5, 2].
      */
-    private fun <T> mergeListsAlternating(a: List<T>, b: List<T>): List<T> {
-        val maxSize = max(a.size, b.size)
+    private fun <T> mergeListsAlternating(a: List<T>, b: List<T>, c: List<T>): List<T> {
+        val maxSize = listOf(a.size, b.size, c.size).max()
         val result = mutableListOf<T>()
         for (i in 0..maxSize) {
             a.getOrNull(i)?.let { result.add(it) }
             b.getOrNull(i)?.let { result.add(it) }
+            c.getOrNull(i)?.let { result.add(it) }
         }
         return result
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val id = url.toHttpUrl().queryParameter("id")!!
-        val url = "$mainUrl/web-vod/api/info?id=$id"
-        val info = app.get(
-            "$mainUrl/web-vod/api/info?id=$id",
-            headers = huhuHeaders
-        ).parsed<MediaItem>()
+        val id = url.substringAfterLast("/")
 
-        return if (info.seasons == null) {
-            newMovieLoadResponse(name = info.name, url = url, type = TvType.Movie, data = id) {
-                this.posterUrl = info.poster
-                this.year = info.releaseDate.take(4).toIntOrNull()
-                this.plot = info.description
-                // id has "movie." as prefix
-                addTMDbId(id.split(".").last())
+        return if (url.contains("series")) {
+            val url = "$apiUrl/tmdb/item/series/tmdb:$id.json?ids=imdb:$id&language=de"
+            val info = app.get(url).parsed<MediaDetailsResponse>()
 
-                for (video in info.videos) {
-                    addTrailer(video.url)
-                }
-            }
-        } else {
-            val episodes = info.seasons.map { (seasonNum, episodes) ->
-                episodes.map {
+            val seasons = info.catalogs.orEmpty().filter { it.id.startsWith("season_") }
+            val episodes = seasons.flatMap { season ->
+                val details = app.get("$apiUrl/tmdb/catalog/video/${season.id}.json")
+                    .parsed<ItemsResponse>()
+
+                details.items.map {
                     newEpisode(it.id, initializer = {
-                        this.season = seasonNum.toIntOrNull()
+                        this.season = it.season
                         this.episode = it.episode
                         this.name = it.name
+                        this.runTime = it.runtime?.div(60)
+                        this.posterUrl = it.images?.thumbnail
                     }, fix = false)
                 }
-            }.flatten()
+            }
 
             newTvSeriesLoadResponse(
                 name = info.name,
@@ -123,13 +132,40 @@ class HuhuTo : MainAPI() {
                 type = TvType.TvSeries,
                 episodes = episodes
             ) {
-                this.posterUrl = info.poster
-                this.year = info.releaseDate.take(4).toIntOrNull()
+                this.posterUrl = info.images?.poster
+                this.year = info.releaseDate?.take(4)?.toIntOrNull()
                 this.plot = info.description
-                // id has "series." as prefix
-                addTMDbId(id.split(".").last())
+                this.tags = info.genres
+                addActors(info.cast.map { Actor(it.name, it.image) })
+                addTMDbId(id)
 
-                for (video in info.videos) {
+                for (video in info.videos.orEmpty()) {
+                    addTrailer(video.url)
+                }
+            }
+        } else if (url.contains("live")) {
+            val info = app.get("$mainUrl/live/resolve?url=$url")
+                .parsed<ResolveResponse>()
+
+            newLiveStreamLoadResponse(url = url, name = info.name, dataUrl = info.url)
+        } else {
+            val url = "$apiUrl/tmdb/item/video/tmdb:$id.json?ids=imdb:$id&language=de"
+            val info = app.get(url).parsed<MediaDetailsResponse>()
+
+            newMovieLoadResponse(
+                name = info.name,
+                url = url,
+                type = TvType.Movie,
+                data = "tmdb:$id"
+            ) {
+                this.posterUrl = info.images?.poster
+                this.year = info.releaseDate?.take(4)?.toIntOrNull()
+                this.plot = info.description
+                this.tags = info.genres
+                addActors(info.cast.map { Actor(it.name, it.image) })
+                addTMDbId(id)
+
+                for (video in info.videos.orEmpty()) {
                     addTrailer(video.url)
                 }
             }
@@ -142,69 +178,115 @@ class HuhuTo : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val url = "$mainUrl/web-vod/api/links?id=$data"
-        val streamSources = app.get(url, headers = huhuHeaders).parsed<StreamSources>()
-
-        for (source in streamSources) {
-            loadExtractor("$mainUrl/web-vod/api/get?link=${source.url}", subtitleCallback, callback)
+        // live
+        if (data.startsWith("http")) {
+            callback.invoke(newExtractorLink(source = name, name = name, url = data))
+            return true
         }
 
-        return streamSources.isNotEmpty()
+        val url = "$mainUrl/vod/source/video/$data.json"
+        val streamSources = app.get(url).parsed<StreamSourcesResponse>()
+
+        for (source in streamSources.sources) {
+            loadExtractor(source.url, subtitleCallback, callback)
+        }
+
+        return streamSources.sources.isNotEmpty()
     }
 
-    class StreamSources : ArrayList<StreamSource>()
-
-    data class StreamSource(
-        val url: String,
-        val name: String,
-        val language: String,
-        val icon: String,
-    )
-
-
-    data class TrendsResponse(
-        val data: List<MediaItem>,
-        val next: String,
+    data class ItemsResponse(
+        val items: List<MediaItem>,
+        val nextCursor: String?,
     )
 
     data class MediaItem(
         val id: String,
-        val poster: String,
-        val backdrop: String?,
+        val type: String,
         val name: String,
-        val originalName: String,
         val description: String?,
-        val releaseDate: String,
-        val genres: List<String>,
-        val videos: List<Trailer> = emptyList(),
-        val seasons: Map<String, List<EpisodeInfo>>? = null,
+        val releaseDate: String?,
+        val ratings: Ratings?,
+        val images: Images?,
+        val genres: List<String>?,
+        // series details only
+        val season: Int?,
+        val episode: Int?,
+        val runtime: Int?
     )
 
-    data class EpisodeInfo(
-        val id: String,
-        val episode: Int,
-        val name: String? = null,
+    data class Ratings(
+        val tmdb: Double,
     )
 
-    data class Trailer(
-        val kind: String,
+    data class Images(
+        val poster: String?,
+        val thumbnail: String?,
+        val backdrops: List<String>?,
+    )
+
+    data class MediaDetailsResponse(
         val id: String,
         val type: String,
+        val name: String,
+        val description: String?,
+        val releaseDate: String?,
+        val ratings: Ratings?,
+        val images: Images?,
+        val genres: List<String>?,
+        val originalName: String,
+        val countries: List<String>?,
+        val homepage: String?,
+        val cast: List<Cast>,
+        val videos: List<Video>?,
+        val catalogs: List<Catalog>?,
+    )
+
+    data class Cast(
+        val name: String,
+        val role: String,
+        val image: String?,
+        val directory: Directory,
+    )
+
+    data class Directory(
+        val type: String,
+        val catalogId: String,
+    )
+
+    data class Video(
         val url: String,
         val name: String,
         val languages: List<String>,
-        val subtitlesExclusive: Boolean,
-        val forbidDownload: Boolean,
-        val addonId: String,
-        val icon: String,
-        val key: String,
     )
 
-    companion object {
-        private val huhuHeaders = mapOf(
-            "Sec-Fetch-Dest" to "empty",
-            "Sec-Fetch-Mode" to "cors",
-            "Sec-Fetch-Site" to "same-origin"
-        )
-    }
+    data class Catalog(
+        val id: String,
+        val name: String,
+        val type: String,
+        val season: Long?,
+        val count: Long?,
+        val releaseDate: String?,
+        val images: Images?,
+        val ratings: Ratings?,
+        val items: List<MediaItem>?,
+        val nextCursor: String?,
+    )
+
+    data class StreamSourcesResponse(
+        val sources: List<StreamSource>,
+    )
+
+    data class StreamSource(
+        val url: String,
+        val name: String,
+        val quality: String?,
+        val languages: List<String>,
+    )
+
+    data class ResolveResponse(
+        val url: String,
+        val live: Boolean,
+        val format: String,
+        val name: String,
+    )
 }
