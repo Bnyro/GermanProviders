@@ -22,5 +22,6 @@ class HDFilmePlugin: Plugin() {
         registerExtractorAPI(DroploadIo())
         registerExtractorAPI(MixDropAg())
         registerExtractorAPI(DoodToExtractor())
+        registerExtractorAPI(DropZeroStream())
     }
 }

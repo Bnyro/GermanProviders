@@ -1,13 +1,30 @@
 package com.bnyro
 
-import com.lagradost.cloudstream3.*
+import com.fasterxml.jackson.annotation.JsonProperty
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.lagradost.cloudstream3.HomePageList
+import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
-import com.lagradost.cloudstream3.mvvm.debugWarning
+import com.lagradost.cloudstream3.MainAPI
+import com.lagradost.cloudstream3.MainPageRequest
+import com.lagradost.cloudstream3.Score
+import com.lagradost.cloudstream3.SearchResponse
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.amap
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.fixUrl
+import com.lagradost.cloudstream3.fixUrlNull
+import com.lagradost.cloudstream3.newEpisode
+import com.lagradost.cloudstream3.newHomePageResponse
+import com.lagradost.cloudstream3.newMovieLoadResponse
+import com.lagradost.cloudstream3.newMovieSearchResponse
+import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
-import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 open class HDFilme : MainAPI() {
@@ -18,36 +35,50 @@ open class HDFilme : MainAPI() {
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie)
     override var mainUrl = "https://hdfilme.ceo"
-    open val streamsSourceHost = "meinecloud.click"
+    open val meineCloudUrl = "https://devideosrc.co"
+
+    private val imdbIdRegex = Regex("""imdb\s*=\s*'(.*)';""")
 
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val doc = app.get("$mainUrl/page/${page}/").document
-        val recommendations = doc.select("#dle-content div.item")
-            .map { it.toSearchResponse() }
+        val doc = app.get(mainUrl).document
+        val recommendationSections = doc.select("section.hd-row")
 
-        val homePageLists = mutableListOf(HomePageList("Recommended", recommendations))
-
-        // the list of new items is the same at each page, thus we only return it the first time
-        if (page == 1) {
-            for (recentSection in doc.select("section.top-filme")) {
-                val title = fixTitle(recentSection.select(".heading").text())
-                val items = recentSection.select(".listing a").map {
-                    it.toRelatedSearchResponse()
-                }
-                homePageLists.add(HomePageList(title, items))
-            }
+        val homePageLists = recommendationSections.map { section ->
+            HomePageList(
+                section.select(".hd-row-title").text(),
+                section.select(".hd-scroller .hd-c").map { it.toHomeSearchResponse() }
+            )
         }
 
-        return newHomePageResponse(homePageLists, hasNext = true)
+        return newHomePageResponse(homePageLists, hasNext = false)
+    }
+
+    private fun Element.toHomeSearchResponse(): SearchResponse {
+        val title = select(".hd-cw-title").text()
+            .ifEmpty { select(".hd-c-title").text() }
+        val url = attr("href")
+        val posterUrl = selectFirst("img")?.attr("src")?.let(::fixUrl)
+        val metaList = select(".hd-cw-meta").text().split(" · ")
+
+        return newMovieSearchResponse(title, type = TvType.Movie, url = url).apply {
+            this.posterUrl = posterUrl
+            this.year = metaList.firstOrNull()?.toIntOrNull()
+            if (metaList.size >= 2) {
+                this.score = Score.from(
+                    metaList[1].takeLastWhile { it.isDigit() || it == '.' }.toIntOrNull(),
+                    maxScore = 10
+                )
+            }
+        }
     }
 
     private fun Element.toSearchResponse(): SearchResponse {
         val title = select("a.movie-title").text()
         val url = select("a.movie-title").attr("href")
-        val posterUrl = selectFirst("figure img")?.getImageUrl()
+        val posterUrl = selectFirst("figure img")?.attr("data-src")?.let(::fixUrl)
         val metaList = select("div.meta > span")
 
         return newMovieSearchResponse(title, type = TvType.Movie, url = url).apply {
@@ -56,15 +87,17 @@ open class HDFilme : MainAPI() {
         }
     }
 
+
     private fun Element.toRelatedSearchResponse(): SearchResponse {
         return newMovieSearchResponse(
             name = attr("title"),
             url = attr("href"),
             type = TvType.Movie
         ) {
-            this.posterUrl = selectFirst("figure img")?.getImageUrl()
+            this.posterUrl = selectFirst("figure img")?.attr("src")?.let(::fixUrl)
         }
     }
+
 
     override suspend fun quickSearch(query: String) = search(query)
 
@@ -74,49 +107,15 @@ open class HDFilme : MainAPI() {
         return doc.select("#dle-content div.item").map { it.toSearchResponse() }
     }
 
-    private fun Element.getImageUrl(): String {
-        return fixUrl(attr("data-src").ifEmpty { attr("src") })
-    }
-
-    private suspend fun extractStreamLinks(doc: Document): List<String> {
-        val streams = mutableListOf<String>()
-
-        try {
-            val streamsJsUrl =
-                doc.selectFirst("script[src*='$streamsSourceHost/ddl']")!!.attr("src")
-
-            val streamsJs = app.get(streamsJsUrl).text
-            val streamLinkRegex = """(?<=\\')http.*(?=\\')""".toRegex()
-            val links = streamLinkRegex.findAll(streamsJs).map { fixUrl(it.value) }
-            streams.addAll(links)
-        } catch (e: Exception) {
-            debugWarning { "Couldn't load streams JS!" }
-        }
-
-        try {
-            val htmlLinksUrl =
-                doc.selectFirst("iframe[src*='$streamsSourceHost/movie']")?.attr("src")
-                    ?: throw NoSuchFieldException("Couldn't find link to iframe!")
-
-            val streamsDoc = app.get(htmlLinksUrl).document
-            val links = streamsDoc.select("._player-mirrors li").map {
-                fixUrl(it.attr("data-link"))
-            }
-            streams.addAll(links)
-        } catch (e: Exception) {
-            debugWarning { "Couldn't load streams IFrame!" }
-        }
-
-        return streams
-    }
-
     override suspend fun load(url: String): LoadResponse? {
-        val doc = app.get(url).document
+        val resp = app.get(url)
+        val doc = resp.document
 
         val details = doc.selectFirst("section.detail") ?: return null
 
         val title = details.select(".info h1").text().replace("hdfilme", "").trim()
-        val posterUrl = details.selectFirst("figure img")?.getImageUrl()
+        val posterUrl = details.selectFirst("figure img")?.attr("data-src")
+            ?.let(::fixUrl)
         val meta = details.select("h1 + div span:not(.divider)")
         val description = doc.selectFirst("section:has(> h2) > div > p")?.text()
         val actors = details.select("li > a[href^='$mainUrl/xfsearch/actors/']").map { it.text() }
@@ -126,66 +125,81 @@ open class HDFilme : MainAPI() {
         val duration = meta.getOrNull(3)?.text()
             ?.replace("min", "", ignoreCase = true)?.trim()?.toIntOrNull()
 
-        val seasons = doc.select(".su-spoiler")
-        if (seasons.isNotEmpty()) {
-            val episodes = seasons.mapIndexed { seasonIndex, season ->
-                // collect all episode stream links
-                val episodes = mutableListOf<List<String>>()
-                var currentEpisodeLinks = mutableListOf<String>()
-                for (item in season.select(".su-spoiler-content > *")) {
-                    if (item.nameIs("br")) {
-                        episodes.add(currentEpisodeLinks)
-                        currentEpisodeLinks = mutableListOf()
-                    } else if (item.nameIs("a")) {
-                        val streamLink = fixUrl(item.attr("href"))
-                        currentEpisodeLinks.add(streamLink)
-                    }
-                }
+        val related = doc.select(".sidebar-section .scroll-content a").map {
+            it.toRelatedSearchResponse()
+        }
 
-                episodes.mapIndexed { index, streams ->
-                    newEpisode(
-                        data = LoadData(streams).toJson()
-                    ) {
-                        this.name = title
-                        this.episode = index + 1
-                        this.season = seasonIndex + 1
-                    }
-                }
-            }.flatten()
+        if (resp.text.contains("Über diese Serie")) {
+            val imdbId = imdbIdRegex.find(resp.text)?.groupValues?.getOrNull(1)
+                ?: throw IllegalArgumentException("missing imdb id")
+            val iframe = app.get("$meineCloudUrl/serial/$imdbId").text
+            val requestBodyRaw = iframe.substringAfter("JSON.stringify(").substringBefore(")")
+                .replace("type", "\"type\"")
+                .replace("id", "\"id\"")
+                .replace("token", "\"token\"")
+                .replace("'", "\"")
+            val requestBody = parseJson<ObjectNode>(requestBodyRaw)
+
+            val details = app.post(
+                "$meineCloudUrl/api/embed-links", json = mapOf(
+                    "id" to requestBody.get("id").textValue(),
+                    "token" to requestBody.get("token").textValue(),
+                    "type" to requestBody.get("type").textValue(),
+                )
+            ).parsed<TvEmbedLinks>()
 
             return newTvSeriesLoadResponse(
                 name = title,
                 url = url,
                 type = TvType.TvSeries,
-                episodes = episodes
+                episodes = details.tv.seasons.flatMap { season ->
+                    season.episodes.map { episode ->
+                        newEpisode(
+                            url = LoadData(episode.sources.map { s -> s.url }).toJson(),
+                            fix = false,
+                            initializer = {
+                                this.season = season.seasonNumber.toInt()
+                                this.name = episode.title
+                                this.description = episode.description
+                            }
+                        )
+                    }
+                }
             ) {
                 this.posterUrl = posterUrl
                 this.year = year
                 this.plot = description
                 this.duration = duration
                 this.tags = tags
+                this.recommendations = related
                 addActors(actors)
             }
-        }
+        } else {
+            val iframeSrc = doc.select("iframe").attr("data-src")
+            val iframe = app.get(iframeSrc).document
 
-        val streams = extractStreamLinks(doc)
-        val related = doc.select("section.top-filme .listing a").map {
-            it.toRelatedSearchResponse()
-        }
+            val details = app.post(
+                "$meineCloudUrl/api/resolve",
+                json = mapOf(
+                    "id" to iframe.select("main").attr("data-id"),
+                    "token" to iframe.select("main").attr("data-resolve-token")
+                )
+            ).parsed<EmbedLinksResponse>()
 
-        return newMovieLoadResponse(
-            title.ifEmpty { return null },
-            url,
-            TvType.Movie,
-            LoadData(streams).toJson()
-        ) {
-            this.posterUrl = posterUrl
-            this.year = year
-            this.duration = duration
-            this.plot = description
-            this.tags = tags
-            this.recommendations = related
-            addActors(actors)
+            return newMovieLoadResponse(
+                title.ifEmpty { return null },
+                url,
+                TvType.Movie,
+                LoadData(details.sources.map { it.url })
+            ) {
+                this.posterUrl = posterUrl
+                this.year = year
+                this.duration = duration
+                this.plot = description
+                this.tags = tags
+                this.recommendations = related
+                addActors(actors)
+            }
         }
     }
 
@@ -213,5 +227,52 @@ open class HDFilme : MainAPI() {
 
     data class LoadData(
         val links: List<String>
+    )
+
+    data class EmbedLinksResponse(
+        val ok: Boolean,
+        val type: String,
+        val id: String,
+        @JsonProperty("imdb_id")
+        val imdbId: String,
+        val season: Any?,
+        val episode: Any?,
+        val title: Any?,
+        val backdrop: Any?,
+        val sources: List<Source>,
+        val captions: List<Any?>,
+    )
+
+    data class Source(
+        val id: String,
+        val name: String,
+        val url: String,
+        val rank: Long,
+    )
+
+    data class TvEmbedLinks(
+        val ok: Boolean,
+        val type: String,
+        val tv: Tv,
+    )
+
+    data class Tv(
+        val title: String,
+        val backdrop: String,
+        val seasons: List<Season>,
+    )
+
+    data class Season(
+        @JsonProperty("season_number")
+        val seasonNumber: Long,
+        val episodes: List<Episode>,
+    )
+
+    data class Episode(
+        @JsonProperty("episode_number")
+        val episodeNumber: Long,
+        val title: String,
+        val description: String,
+        val sources: List<Source>,
     )
 }
