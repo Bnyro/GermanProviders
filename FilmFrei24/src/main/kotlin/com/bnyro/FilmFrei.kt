@@ -1,25 +1,21 @@
 package com.bnyro
 
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
-import com.lagradost.cloudstream3.LoadResponse.Companion.addScore
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.fixUrl
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.utils.AppUtils
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import okhttp3.HttpUrl.Companion.toHttpUrl
 
+// TODO: series support
 class FilmFrei : MainAPI() {
     override var name: String = "FilmFrei24"
     override var mainUrl: String = "https://filmfrei24.com"
@@ -27,53 +23,82 @@ class FilmFrei : MainAPI() {
     override val supportedTypes: Set<TvType> = setOf(TvType.Movie)
     override var lang: String = "de"
 
-    private suspend fun loadMovies(type: String = "ALL_FILMS"): List<Movie> {
-        val doc = app.get(mainUrl).text
-
-        val rawJson =
-            doc.substringAfter("const $type").substringAfter("=").substringBefore(";").trim()
-        return AppUtils.parseJson<MovieList>(rawJson)
+    private suspend fun loadCatalog(): Catalog {
+        return app.get("$mainUrl/beta/api.php?q=catalog&part=core")
+            .parsed<Catalog>()
     }
 
-    fun Movie.toSearchResponse(): SearchResponse {
+    private fun Film.toSearchResponse(): SearchResponse {
         return newMovieSearchResponse(
             name = title,
-            url = "$mainUrl/player/?s=$title",
+            url = "$mainUrl/#/play/f/$title",
             type = TvType.Movie
         ) {
-            posterUrl = fixUrl(thumbnail)
-            year = this@toSearchResponse.year?.toString()?.toIntOrNull()
+            posterUrl = fixImageUrl(card)
+            year = this@toSearchResponse.year.toIntOrNull()
         }
     }
 
-    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse? {
-        val movies = loadMovies("HERO_FILMS")
+    private fun fixImageUrl(url: String): String {
+        // const b64u = x => btoa(x).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        // const unpack = v => { if (!v || v[0] !== '~') return v; const i = v.lastIndexOf('|'); return MAIN + '/api/image.php?u=' + b64u('https://image.tmdb.org/t/p/' + v.slice(1, i)) + '&w=' + v.slice(i + 1); };
+        if (url[0] != '~' || !url.contains("|")) return url
+
+        val (path, resolution) = url.split("|", limit = 2)
+        val fullImageUrl = "https://image.tmdb.org/t/p/" + path.substring(1)
+//                    .replace("+", "-")
+//                    .replace("/", "_")
+//                    .trimEnd('=')
+        // val pathEncoded = base64Encode(fullImageUrl.toByteArray())
+        // tmdb image proxied through filmfrei api
+        // return "$mainUrl/api/image.php?u=${pathEncoded}&w=$resolution"
+
+        return fullImageUrl
+    }
+
+    override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        val catalog = loadCatalog()
+        val genres = catalog.films.flatMap { movie -> movie.genres.map { genre -> genre to movie } }
+            .groupBy { (genre, _) -> genre }
+            .toList()
+            .sortedBy { (genre, _) -> genre }
+
+        val topMovies = catalog.top10.mapNotNull { slug ->
+            catalog.films.find { "${it.t}:${it.id}" == slug }
+        }.map { it.toSearchResponse() }
+        val lists = genres.map { (genre, movies) ->
+            HomePageList(genre, movies.map { it.second.toSearchResponse() })
+        }
 
         return newHomePageResponse(
-            HomePageList("Beliebt", movies.map { it.toSearchResponse() }),
+            listOf(HomePageList("Beliebt", topMovies)) + lists,
             hasNext = false
         )
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val allMovies = loadMovies()
+        val allMovies = loadCatalog().films
 
         return allMovies
             .filter { it.title.contains(query, ignoreCase = true) }
-            .sortedByDescending { it.tmdbRating }
+            .sortedByDescending { it.votes }
             .map { it.toSearchResponse() }
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val title = url.toHttpUrl().queryParameter("s")
+        val slug = url.substringAfterLast("/")
 
-        val movie = loadMovies().first { it.title == title }
-        return newMovieLoadResponse(name = movie.title, url = url, dataUrl = movie.video, type = TvType.Movie) {
-            posterUrl = fixUrl(movie.banner)
-            year = movie.year?.toString()?.toIntOrNull()
-            duration = movie.duration.takeWhile { it.isDigit() }.toIntOrNull()
-            tags = movie.genres
-            addScore(movie.tmdbRating?.toString())
+        val movie = app.get("$mainUrl/beta/api.php?q=play&type=f&id=$slug")
+            .parsed<PlayResponse>()
+        return newMovieLoadResponse(
+            name = movie.title,
+            url = url,
+            dataUrl = movie.src,
+            type = TvType.Movie
+        ) {
+            posterUrl = fixImageUrl(movie.poster)
+            plot = movie.desc
+            year = movie.sub.takeWhile { it.isDigit() }.toIntOrNull()
         }
     }
 
@@ -88,24 +113,67 @@ class FilmFrei : MainAPI() {
         return true
     }
 
-    private class MovieList : ArrayList<Movie>()
+    private data class Catalog(
+        val films: List<Film>,
+        val series: List<Series>,
+        val top10: List<String>,
+        val tbase: String,
+        val trailers: Map<String, String>,
+    )
 
-    data class Movie(
-        val id: Long,
+    private data class Film(
+        val soon: Long,
+        val t: String,
+        val id: String,
         val title: String,
-        @JsonProperty("upload_date")
-        val uploadDate: String,
-        val thumbnail: String,
-        val banner: String,
-        val logo: String,
-        val video: String,
-        val language: String,
-        val duration: String,
-        val year: Any?,
+        val year: String,
+        val min: Long,
         val genres: List<String>,
-        @JsonProperty("tmdb_rating")
-        val tmdbRating: Double?,
-        @JsonProperty("tmdb_votes")
-        val tmdbVotes: Long,
+        val rating: Double,
+        val votes: Long,
+        val quality: String,
+        val lang: String,
+        val added: String,
+        val card: String,
+        val hero: String,
+        val poster: String,
+        val logo: String,
+    )
+
+    private data class Series(
+        val t: String,
+        val soon: Long,
+        val id: String,
+        val title: String,
+        val year: String,
+        val endYear: String,
+        val genres: List<String>,
+        val rating: Double,
+        val votes: Long,
+        val added: String,
+        val nf: Long,
+        val prog: Any?,
+        val ne: List<Long>,
+        val seasons: Long,
+        val episodes: Long,
+        val card: String,
+        val hero: String,
+        val poster: String,
+        val logo: String,
+    )
+
+    private data class PlayResponse(
+        val ok: Boolean,
+        val type: String,
+        val id: String,
+        val title: String,
+        val sub: String,
+        val desc: String,
+        val src: String,
+        val ready: Boolean,
+        val vtt: String,
+        val poster: String,
+        val logo: String,
+        val progressSlug: String,
     )
 }
