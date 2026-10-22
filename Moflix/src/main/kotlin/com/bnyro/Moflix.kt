@@ -10,6 +10,8 @@ import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.AppUtils.toJson
 import org.jsoup.Jsoup
 
+private const val USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:158.0) Gecko/20100101 Firefox/158.0"
+
 open class Moflix : MainAPI() {
     override var name = "Moflix"
     override var mainUrl = "https://moflix-stream.xyz"
@@ -17,6 +19,8 @@ open class Moflix : MainAPI() {
     override val hasMainPage = true
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.TvSeries, TvType.Movie)
+
+    private val baseHeaders = mapOf("Referer" to "$mainUrl/", "User-Agent" to USER_AGENT)
 
     companion object {
         fun getType(isSeries: Boolean?): TvType {
@@ -45,7 +49,8 @@ open class Moflix : MainAPI() {
         val query = request.data.split("/")
         val home = app.get(
             "$mainUrl/api/v1/channel/${query.first()}?returnContentOnly=true&restriction=&order=${query.last()}&paginate=simple&perPage=50&query=&page=$page",
-            referer = "$mainUrl/"
+            headers = baseHeaders
+
         ).parsed<Responses>().pagination?.data?.mapNotNull { it.toSearchResponse() }
             ?: emptyList()
 
@@ -66,7 +71,7 @@ open class Moflix : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse>? = search(query)
 
     override suspend fun search(query: String): List<SearchResponse>? {
-        return app.get("$mainUrl/api/v1/search/$query?loader=searchPage", referer = "$mainUrl/")
+        return app.get("$mainUrl/api/v1/search/$query?loader=searchPage", headers = baseHeaders)
             .parsed<Responses>().results?.filter { it.modelType == "title" }
             ?.mapNotNull { it.toSearchResponse() }
     }
@@ -74,7 +79,7 @@ open class Moflix : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val res = app.get(
             "$mainUrl/api/v1/titles/${url.fixId()}?loader=titlePage",
-            referer = "$mainUrl/"
+            headers = baseHeaders
         ).parsed<Responses>()
 
         val uri = Jsoup.parse(res.seo.toString()).selectFirst("link[rel=canonical]")?.attr("href")
@@ -98,14 +103,14 @@ open class Moflix : MainAPI() {
                 roleString = it.pivot?.character
             )
         }
-        val recommendations = app.get("$mainUrl/api/v1/titles/$id/related", referer = "$mainUrl/")
+        val recommendations = app.get("$mainUrl/api/v1/titles/$id/related", headers = baseHeaders)
             .parsed<Responses>().titles?.mapNotNull { it.toSearchResponse() }
 
         return if (type == TvType.TvSeries) {
             val episodes = res.seasons?.data?.mapNotNull { season ->
                 app.get(
                     "$mainUrl/api/v1/titles/${res.title?.id}/seasons/${season.number}?loader=seasonPage",
-                    referer = "$mainUrl/"
+                    headers = baseHeaders
                 ).parsed<Responses>().episodes?.data?.map { episode ->
                     newEpisode(
                         LoadData(
@@ -182,7 +187,7 @@ open class Moflix : MainAPI() {
         val iframes = if (json.isSeries == true) {
             app.get(
                 "$mainUrl/api/v1/titles/${json.id}/seasons/${json.season}/episodes/${json.episode}?loader=episodePage",
-                referer = "$mainUrl/"
+                headers = baseHeaders
             ).parsed<Episodes>().episode?.videos?.filter { it.category.equals("full", true) }
         } else {
             json.urls
