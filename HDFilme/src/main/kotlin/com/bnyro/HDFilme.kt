@@ -2,6 +2,7 @@ package com.bnyro
 
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageList
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -27,6 +28,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
+// Topstreamfilm is the same layout
 open class HDFilme : MainAPI() {
     override var name = "HDFilme"
     override var lang = "de"
@@ -132,39 +134,16 @@ open class HDFilme : MainAPI() {
         if (resp.text.contains("Über diese Serie")) {
             val imdbId = imdbIdRegex.find(resp.text)?.groupValues?.getOrNull(1)
                 ?: throw IllegalArgumentException("missing imdb id")
-            val iframe = app.get("$meineCloudUrl/serial/$imdbId").text
-            val requestBodyRaw = iframe.substringAfter("JSON.stringify(").substringBefore(")")
-                .replace("type", "\"type\"")
-                .replace("id", "\"id\"")
-                .replace("token", "\"token\"")
-                .replace("'", "\"")
-            val requestBody = parseJson<ObjectNode>(requestBodyRaw)
 
-            val details = app.post(
-                "$meineCloudUrl/api/embed-links", json = mapOf(
-                    "id" to requestBody.get("id").textValue(),
-                    "token" to requestBody.get("token").textValue(),
-                    "type" to requestBody.get("type").textValue(),
-                )
-            ).parsed<TvEmbedLinks>()
+            // fails if devideosrc doesn't have any episodes for this series
+            val episodes = runCatching { loadEpisodes(imdbId) }
+                .getOrElse { emptyList() }
 
             return newTvSeriesLoadResponse(
                 name = title,
                 url = url,
                 type = TvType.TvSeries,
-                episodes = details.tv.seasons.flatMap { season ->
-                    season.episodes.map { episode ->
-                        newEpisode(
-                            url = LoadData(episode.sources.map { s -> s.url }).toJson(),
-                            fix = false,
-                            initializer = {
-                                this.season = season.seasonNumber.toInt()
-                                this.name = episode.title
-                                this.description = episode.description
-                            }
-                        )
-                    }
-                }
+                episodes = episodes
             ) {
                 this.posterUrl = posterUrl
                 this.year = year
@@ -199,6 +178,38 @@ open class HDFilme : MainAPI() {
                 this.tags = tags
                 this.recommendations = related
                 addActors(actors)
+            }
+        }
+    }
+
+    private suspend fun loadEpisodes(imdbId: String): List<Episode> {
+        val iframe = app.get("$meineCloudUrl/serial/$imdbId").text
+        val requestBodyRaw = iframe.substringAfter("JSON.stringify(").substringBefore(")")
+            .replace("type", "\"type\"")
+            .replace("id", "\"id\"")
+            .replace("token", "\"token\"")
+            .replace("'", "\"")
+        val requestBody = parseJson<ObjectNode>(requestBodyRaw)
+
+        val details = app.post(
+            "$meineCloudUrl/api/embed-links", json = mapOf(
+                "id" to requestBody.get("id").textValue(),
+                "token" to requestBody.get("token").textValue(),
+                "type" to requestBody.get("type").textValue(),
+            )
+        ).parsed<TvEmbedLinks>()
+
+        return details.tv.seasons.flatMap { season ->
+            season.episodes.map { episode ->
+                newEpisode(
+                    url = LoadData(episode.sources.map { s -> s.url }).toJson(),
+                    fix = false,
+                    initializer = {
+                        this.season = season.seasonNumber.toInt()
+                        this.name = episode.title
+                        this.description = episode.description
+                    }
+                )
             }
         }
     }
@@ -265,10 +276,10 @@ open class HDFilme : MainAPI() {
     data class Season(
         @JsonProperty("season_number")
         val seasonNumber: Long,
-        val episodes: List<Episode>,
+        val episodes: List<SeasonEpisode>,
     )
 
-    data class Episode(
+    data class SeasonEpisode(
         @JsonProperty("episode_number")
         val episodeNumber: Long,
         val title: String,
